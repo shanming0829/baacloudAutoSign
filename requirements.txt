@@ -1,0 +1,11 @@
+numpy
+imutils
+sklearn
+tensorflow
+keras
+requests
+fake_useragent
+flask
+imutils
+opencv-contrib-python
+lxml
