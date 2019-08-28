@@ -10,6 +10,7 @@ import getpass
 import json
 import time
 import re
+import pathlib
 
 import requests
 from fake_useragent import UserAgent
@@ -20,6 +21,8 @@ import image_helper
 logger = helper.getLogger('Baacloud')
 
 CURRENT_TIME = datetime.datetime.now()
+BASEDIR = pathlib.Path(__file__).parent
+CONFIG_FILE = BASEDIR / 'config/baacloud.json'
 
 HEADER = {
     'content-type': 'application/x-www-form-urlencoded',
@@ -32,6 +35,19 @@ def string(data):
     if isinstance(data, bytes):
         return data.decode()
     return data
+
+
+def get_config():
+    if not CONFIG_FILE.exists():
+        config = {}
+        config['username'] = input('Email:')
+        config['password'] = getpass.getpass()
+        CONFIG_FILE.parent.mkdir(exist_ok=True)
+        with CONFIG_FILE.open('wt') as f:
+            f.write(json.dumps(config))
+    else:
+        config = json.load(CONFIG_FILE.open())
+    return config
 
 
 class Baacloud(object):
@@ -78,6 +94,10 @@ class Baacloud(object):
         loginData = json.loads(resText)
         if loginData['ok'] == '1':
             logger.info('Login successful...')
+            return True
+        logger.info('Login falure...')
+        CONFIG_FILE.unlink()
+        return False
 
     def getLastSignTime(self):
         indexFile = 'index.html'
@@ -95,8 +115,10 @@ class Baacloud(object):
         return datetime.datetime.strptime(timeNode.text, '%Y-%m-%d %H:%M:%S')
 
     def checkSignTime(self, lastTime):
-        if CURRENT_TIME < lastTime + datetime.timedelta(days=1):
-            logger.error('Not over 24h before previous sign')
+        can_sign = lastTime + datetime.timedelta(days=1)
+        if CURRENT_TIME < can_sign:
+            logger.error('Not over 24h, delta time: %s',
+                         (can_sign - CURRENT_TIME))
             return False
         return True
 
@@ -120,21 +142,20 @@ class Baacloud(object):
             if match.group(1) == '验证码错误!':
                 logger.error('Error sign code...')
                 return False
-            logger.info('Sign successful...')
+            logger.info('Sign successful with %s', match.group(1))
             return True
 
     def run(self):
-        self.login()
-        lastSignTime = self.getLastSignTime()
-        if self.checkSignTime(lastSignTime):
-            while not self.checkIn():
-                time.sleep(1)
+        if self.login():
+            lastSignTime = self.getLastSignTime()
+            if self.checkSignTime(lastSignTime):
+                while not self.checkIn():
+                    time.sleep(1)
 
 
 def main():
-    username = input('Email:')
-    password = getpass.getpass()
-    baacloud = Baacloud(username, password)
+    config = get_config()
+    baacloud = Baacloud(config['username'], config['password'])
     baacloud.run()
 
 
